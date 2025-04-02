@@ -1,54 +1,21 @@
-def get_gmail_service():
-    """Authentification Gmail et création du service avec gestion d'erreurs améliorée."""
-    creds = None
-    
-    # Tentative de lecture du token
-    if os.path.exists(TOKEN_PATH):
-        try:
-            with open(TOKEN_PATH, 'r') as token_file:
-                token_content = token_file.read().strip()
-                print(f"Premiers caractères du token : {token_content[:10]}...")
-                
-                # Tenter de charger le JSON
-                creds_data = json.loads(token_content)
-                creds = Credentials.from_authorized_user_info(creds_data)
-                print("Token chargé avec succès")
-        except json.JSONDecodeError as e:
-            print(f"Erreur de décodage JSON du token : {e}")
-            creds = None
-        except Exception as e:
-            print(f"Autre erreur lors du chargement du token : {e}")
-            creds = None
-    
-    # Si pas de token valide, tenter l'authentification
-    if not creds or not creds.valid:
-        if creds and creds.expired and creds.refresh_token:
-            try:
-                print("Tentative de rafraîchissement du token...")
-                creds.refresh(Request())
-                print("Token rafraîchi avec succès")
-            except Exception as e:
-                print(f"Échec du rafraîchissement du token : {e}")
-                creds = None
+name: Gmail to Airtable Sync
+on:
+  workflow_dispatch:
+jobs:
+  debug:
+    runs-on: ubuntu-latest
+    steps:
+    - name: Debug Token Format
+      run: |
+        # Créer le fichier token.json avec le secret
+        echo '${{ secrets.GMAIL_TOKEN }}' > token_raw.txt
         
-        # Si toujours pas de token, création d'un nouveau
-        if not creds:
-            try:
-                print("Création d'un nouveau token...")
-                flow = InstalledAppFlow.from_client_secrets_file(CREDENTIALS_PATH, SCOPES)
-                creds = flow.run_local_server(port=0)
-                print("Nouveau token créé avec succès")
-            except Exception as e:
-                print(f"Échec de la création d'un nouveau token : {e}")
-                raise e  # On remonte l'erreur car impossible de continuer sans credentials
+        # Vérifier les premiers caractères (attention à ne pas exposer tout le contenu)
+        echo "Premiers caractères du token (devrait commencer par {) :"
+        head -c 10 token_raw.txt
         
-        # Sauvegarde du nouveau token
-        try:
-            with open(TOKEN_PATH, 'w') as token:
-                token_json = creds.to_json()
-                token.write(token_json)
-                print("Token sauvegardé dans le fichier token.json")
-        except Exception as e:
-            print(f"Erreur lors de la sauvegarde du token : {e}")
-    
-    return build('gmail', 'v1', credentials=creds)
+        # Vérifier si c'est un JSON valide
+        echo "Validation du format JSON :"
+        cat token_raw.txt | python -c "import sys, json; json.load(sys.stdin); print('Token JSON valide!')" || echo "Token JSON invalide"
+        
+        # Ne pas afficher le contenu complet pour des raisons de sécurité
