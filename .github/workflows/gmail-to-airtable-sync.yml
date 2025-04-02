@@ -1,67 +1,33 @@
-name: Gmail to Airtable Sync
+name: Sync Gmail to Airtable
+
 on:
-  schedule:
-    - cron: '*/5 * * * *'
-  workflow_dispatch:
+  push:
+    branches:
+      - main
+
 jobs:
   sync:
     runs-on: ubuntu-latest
-    
+
     steps:
-    - name: Checkout repository
-      uses: actions/checkout@v3
-      
+    - name: Checkout code
+      uses: actions/checkout@v2
+
     - name: Set up Python
-      uses: actions/setup-python@v4
+      uses: actions/setup-python@v2
       with:
-        python-version: '3.10'
-        
+        python-version: '3.x'
+
     - name: Install dependencies
       run: |
         python -m pip install --upgrade pip
-        pip install google-api-python-client google-auth-httplib2 google-auth-oauthlib requests
-        
-    - name: Prepare credentials
-      run: |
-        # Créer le fichier credentials.json
-        echo "${{ secrets.GMAIL_CREDENTIALS }}" > credentials.json
-        
-        # Si le token existe, le créer
-        if [ -n "${{ secrets.GMAIL_TOKEN }}" ]; then
-          echo "${{ secrets.GMAIL_TOKEN }}" > token.json
-          # Vérifier que le token est un JSON valide
-          python -c "import json; json.load(open('token.json'))" || echo "ATTENTION: Le token n'est pas un JSON valide!"
-        else
-          echo "Le secret GMAIL_TOKEN n'est pas configuré. L'authentification interactive sera nécessaire."
-        fi
-        
-    - name: Run Gmail to Airtable sync
-      id: run_sync
+        pip install requests google-auth google-auth-oauthlib google-auth-httplib2 google-api-python-client
+
+    - name: Sync Gmail to Airtable
       env:
         AIRTABLE_API_KEY: ${{ secrets.AIRTABLE_API_KEY }}
         AIRTABLE_BASE_ID: ${{ secrets.AIRTABLE_BASE_ID }}
         AIRTABLE_TABLE_NAME: ${{ secrets.AIRTABLE_TABLE_NAME }}
+        GMAIL_CREDENTIALS: ${{ secrets.GMAIL_CREDENTIALS }}
       run: |
-        # Exécuter le script avec gestion d'erreur
-        python gmail_to_airtable.py || echo "Le script a rencontré une erreur, mais le workflow continue"
-        
-        # Sauvegarder le nouveau token s'il existe et est valide
-        if [ -f token.json ]; then
-          # Vérifier que le token est un JSON valide
-          if python -c "import json; json.load(open('token.json'))" 2>/dev/null; then
-            TOKEN_CONTENT=$(cat token.json)
-            echo "token<<EOF" >> $GITHUB_OUTPUT
-            echo "$TOKEN_CONTENT" >> $GITHUB_OUTPUT
-            echo "EOF" >> $GITHUB_OUTPUT
-          else
-            echo "Le nouveau token n'est pas un JSON valide. Il ne sera pas sauvegardé."
-          fi
-        fi
-    
-    - name: Update token in GitHub secrets
-      if: steps.run_sync.outputs.token != ''
-      uses: gliech/create-github-secret-action@v1
-      with:
-        name: GMAIL_TOKEN
-        value: ${{ steps.run_sync.outputs.token }}
-        pa_token: ${{ secrets.GH_PA_TOKEN }}
+        python sync_gmail_airtable.py
