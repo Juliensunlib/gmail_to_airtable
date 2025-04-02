@@ -30,4 +30,4 @@ jobs:
         AIRTABLE_TABLE_NAME: ${{ secrets.AIRTABLE_TABLE_NAME }}
         GMAIL_CREDENTIALS: ${{ secrets.GMAIL_CREDENTIALS }}
       run: |
-        python sync_gmail_airtable.py
+        python gmail_to_airtable.py
