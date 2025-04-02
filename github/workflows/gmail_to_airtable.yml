@@ -1,11 +1,9 @@
 name: Gmail to Airtable Sync
-
 on:
   schedule:
     # Exécution toutes les 5 minutes
     - cron: '*/5 * * * *'
   workflow_dispatch: # Pour permettre l'exécution manuelle
-
 jobs:
   sync:
     runs-on: ubuntu-latest
@@ -25,6 +23,7 @@ jobs:
         pip install google-api-python-client google-auth-httplib2 google-auth-oauthlib requests
         
     - name: Run Gmail to Airtable sync
+      id: run_sync  # Ajout de l'ID pour référencer cette étape plus tard
       env:
         AIRTABLE_API_KEY: ${{ secrets.AIRTABLE_API_KEY }}
         AIRTABLE_BASE_ID: ${{ secrets.AIRTABLE_BASE_ID }}
@@ -45,8 +44,7 @@ jobs:
         # Sauvegarder le nouveau token pour les futures exécutions
         if [ -f token.json ]; then
           TOKEN_CONTENT=$(cat token.json)
-          echo "GMAIL_TOKEN=$TOKEN_CONTENT" >> $GITHUB_ENV
-          echo "::set-output name=token::$TOKEN_CONTENT"
+          echo "token=$TOKEN_CONTENT" >> $GITHUB_OUTPUT
         fi
     
     - name: Update token in GitHub secrets
