@@ -1,38 +1,21 @@
-name: Sync Gmail to Airtable
-
+name: Gmail to Airtable Sync
 on:
-  push:
-    branches:
-      - main
-
+  workflow_dispatch:
 jobs:
-  sync:
+  debug:
     runs-on: ubuntu-latest
-
     steps:
-    - name: Checkout code
-      uses: actions/checkout@v2
-
-    - name: Set up Python
-      uses: actions/setup-python@v2
-      with:
-        python-version: '3.x'
-
-    - name: Install dependencies
+    - name: Debug Token Format
       run: |
-        python -m pip install --upgrade pip
-        pip install requests google-auth google-auth-oauthlib google-auth-httplib2 google-api-python-client
-
-    - name: Create credentials.json
-      env:
-        GMAIL_CREDENTIALS: ${{ secrets.GMAIL_CREDENTIALS }}
-      run: |
-        echo "$GMAIL_CREDENTIALS" > credentials.json
-
-    - name: Sync Gmail to Airtable
-      env:
-        AIRTABLE_API_KEY: ${{ secrets.AIRTABLE_API_KEY }}
-        AIRTABLE_BASE_ID: ${{ secrets.AIRTABLE_BASE_ID }}
-        AIRTABLE_TABLE_NAME: ${{ secrets.AIRTABLE_TABLE_NAME }}
-      run: |
-        python gmail_to_airtable.py
+        # Créer le fichier token.json avec le secret
+        echo '${{ secrets.GMAIL_TOKEN }}' > token_raw.txt
+        
+        # Vérifier les premiers caractères (attention à ne pas exposer tout le contenu)
+        echo "Premiers caractères du token (devrait commencer par {) :"
+        head -c 10 token_raw.txt
+        
+        # Vérifier si c'est un JSON valide
+        echo "Validation du format JSON :"
+        cat token_raw.txt | python -c "import sys, json; json.load(sys.stdin); print('Token JSON valide!')" || echo "Token JSON invalide"
+        
+        # Ne pas afficher le contenu complet pour des raisons de sécurité
