@@ -23,11 +23,16 @@ jobs:
         python -m pip install --upgrade pip
         pip install requests google-auth google-auth-oauthlib google-auth-httplib2 google-api-python-client
 
+    - name: Create credentials.json
+      env:
+        GMAIL_CREDENTIALS: ${{ secrets.GMAIL_CREDENTIALS }}
+      run: |
+        echo "$GMAIL_CREDENTIALS" > credentials.json
+
     - name: Sync Gmail to Airtable
       env:
         AIRTABLE_API_KEY: ${{ secrets.AIRTABLE_API_KEY }}
         AIRTABLE_BASE_ID: ${{ secrets.AIRTABLE_BASE_ID }}
         AIRTABLE_TABLE_NAME: ${{ secrets.AIRTABLE_TABLE_NAME }}
-        GMAIL_CREDENTIALS: ${{ secrets.GMAIL_CREDENTIALS }}
       run: |
         python gmail_to_airtable.py
