@@ -3,6 +3,7 @@ import base64
 import json
 import time
 import requests
+import sys
 from googleapiclient.discovery import build
 from google_auth_oauthlib.flow import InstalledAppFlow
 from google.auth.transport.requests import Request
@@ -59,8 +60,19 @@ def get_gmail_service():
             try:
                 print("Création d'un nouveau token...")
                 flow = InstalledAppFlow.from_client_secrets_file(CREDENTIALS_PATH, SCOPES)
-                creds = flow.run_local_server(port=0)
-                print("Nouveau token créé avec succès")
+                
+                # Détection environnement GitHub Actions ou autres environnements sans interface graphique
+                if 'GITHUB_ACTIONS' in os.environ or 'CI' in os.environ:
+                    print("Environnement sans interface graphique détecté (GitHub Actions)")
+                    # Utiliser une méthode qui ne nécessite pas de navigateur
+                    # En environnement CI, on doit déjà avoir un token valide fourni comme secret
+                    print("Un token valide doit déjà exister dans l'environnement CI")
+                    print("Si vous voyez cette erreur, vérifiez que votre secret GMAIL_TOKEN est correctement configuré")
+                    sys.exit(1)
+                else:
+                    # En environnement normal, utiliser le navigateur
+                    creds = flow.run_local_server(port=0)
+                    print("Nouveau token créé avec succès")
             except Exception as e:
                 print(f"Échec de la création d'un nouveau token : {e}")
                 raise e  # On remonte l'erreur car impossible de continuer sans credentials
