@@ -53,10 +53,8 @@ jobs:
         AIRTABLE_API_KEY: ${{ secrets.AIRTABLE_API_KEY }}
         AIRTABLE_BASE_ID: ${{ secrets.AIRTABLE_BASE_ID }}
         AIRTABLE_TABLE_NAME: ${{ secrets.AIRTABLE_TABLE_NAME }}
+        CI: true  # Marquer explicitement comme environnement CI
       run: |
-        # Modifier le script pour éviter l'authentification interactive
-        sed -i 's/flow\.run_local_server(port=0)/flow.run_console()/g' gmail_to_airtable.py || echo "Aucune modification du flux OAuth nécessaire."
-        
         # Exécuter le script avec gestion d'erreur
         python gmail_to_airtable.py || echo "Le script a rencontré une erreur, mais le workflow continue"
         
