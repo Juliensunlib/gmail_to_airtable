@@ -1,21 +1,82 @@
 name: Gmail to Airtable Sync
 on:
+  schedule:
+    - cron: '*/5 * * * *'
   workflow_dispatch:
 jobs:
-  debug:
+  sync:
     runs-on: ubuntu-latest
+    
     steps:
-    - name: Debug Token Format
+    - name: Checkout repository
+      uses: actions/checkout@v3
+      
+    - name: Set up Python
+      uses: actions/setup-python@v4
+      with:
+        python-version: '3.10'
+        
+    - name: Install dependencies
       run: |
+        python -m pip install --upgrade pip
+        pip install google-api-python-client google-auth-httplib2 google-auth-oauthlib requests
+        
+    - name: Debug GMAIL_TOKEN
+      run: |
+        if [ -n "${{ secrets.GMAIL_TOKEN }}" ]; then
+          echo "Le token existe et contient $(echo "${{ secrets.GMAIL_TOKEN }}" | wc -c) caractères"
+          echo "15 premiers caractères du token (devrait commencer par {) : $(echo "${{ secrets.GMAIL_TOKEN }}" | cut -c 1-15)"
+        else
+          echo "Le secret GMAIL_TOKEN n'est pas configuré."
+        fi
+    
+    - name: Prepare credentials
+      run: |
+        # Créer le fichier credentials.json
+        echo "${{ secrets.GMAIL_CREDENTIALS }}" > credentials.json
+        
         # Créer le fichier token.json avec le secret
-        echo '${{ secrets.GMAIL_TOKEN }}' > token_raw.txt
+        echo "${{ secrets.GMAIL_TOKEN }}" > token.json
         
-        # Vérifier les premiers caractères (attention à ne pas exposer tout le contenu)
-        echo "Premiers caractères du token (devrait commencer par {) :"
-        head -c 10 token_raw.txt
+        # Validation du format JSON
+        if python -c "import json; json.load(open('token.json'))" 2>/dev/null; then
+          echo "Token JSON valide!"
+        else
+          echo "ERREUR: Le token n'est pas un JSON valide! Contenu des 50 premiers caractères:"
+          head -c 50 token.json
+          exit 1
+        fi
         
-        # Vérifier si c'est un JSON valide
-        echo "Validation du format JSON :"
-        cat token_raw.txt | python -c "import sys, json; json.load(sys.stdin); print('Token JSON valide!')" || echo "Token JSON invalide"
+    - name: Run Gmail to Airtable sync
+      id: run_sync
+      env:
+        AIRTABLE_API_KEY: ${{ secrets.AIRTABLE_API_KEY }}
+        AIRTABLE_BASE_ID: ${{ secrets.AIRTABLE_BASE_ID }}
+        AIRTABLE_TABLE_NAME: ${{ secrets.AIRTABLE_TABLE_NAME }}
+      run: |
+        # Modifier le script pour éviter l'authentification interactive
+        sed -i 's/flow\.run_local_server(port=0)/flow.run_console()/g' gmail_to_airtable.py || echo "Aucune modification du flux OAuth nécessaire."
         
-        # Ne pas afficher le contenu complet pour des raisons de sécurité
+        # Exécuter le script avec gestion d'erreur
+        python gmail_to_airtable.py || echo "Le script a rencontré une erreur, mais le workflow continue"
+        
+        # Sauvegarder le nouveau token s'il existe et est valide
+        if [ -f token.json ]; then
+          # Vérifier que le token est un JSON valide
+          if python -c "import json; json.load(open('token.json'))" 2>/dev/null; then
+            TOKEN_CONTENT=$(cat token.json)
+            echo "token<<EOF" >> $GITHUB_OUTPUT
+            echo "$TOKEN_CONTENT" >> $GITHUB_OUTPUT
+            echo "EOF" >> $GITHUB_OUTPUT
+          else
+            echo "Le nouveau token n'est pas un JSON valide. Il ne sera pas sauvegardé."
+          fi
+        fi
+    
+    - name: Update token in GitHub secrets
+      if: steps.run_sync.outputs.token != ''
+      uses: gliech/create-github-secret-action@v1
+      with:
+        name: GMAIL_TOKEN
+        value: ${{ steps.run_sync.outputs.token }}
+        pa_token: ${{ secrets.GH_PA_TOKEN }}
