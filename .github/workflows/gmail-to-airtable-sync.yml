@@ -1,7 +1,7 @@
 name: Gmail to Airtable Sync
 on:
   schedule:
-    - cron: '*/5 * * * *'  # J'ai corrigé la syntaxe cron qui semblait incorrecte
+    - cron: '*/5 * * * *'
   workflow_dispatch:
 jobs:
   sync:
@@ -9,7 +9,7 @@ jobs:
     
     steps:
     - name: Checkout repository
-      uses: actions/checkout@v3
+      uses: actions/checkout@v4
       
     - name: Set up Python
       uses: actions/setup-python@v4
@@ -36,7 +36,6 @@ jobs:
         echo '${{ secrets.GMAIL_CREDENTIALS }}' > credentials.json
         
         # Créer le fichier token.json avec le secret
-        # Utilisation de guillemets simples pour éviter les problèmes d'échappement
         echo '${{ secrets.GMAIL_TOKEN }}' > token.json
         
         # Validation du format JSON avec erreur détaillée
@@ -63,7 +62,7 @@ jobs:
         AIRTABLE_API_KEY: ${{ secrets.AIRTABLE_API_KEY }}
         AIRTABLE_BASE_ID: ${{ secrets.AIRTABLE_BASE_ID }}
         AIRTABLE_TABLE_NAME: ${{ secrets.AIRTABLE_TABLE_NAME }}
-        CI: true  # Marquer explicitement comme environnement CI
+        CI: true
       run: |
         # Exécuter le script avec gestion d'erreur
         python gmail_to_airtable.py || echo "Le script a rencontré une erreur, mais le workflow continue"
@@ -76,15 +75,84 @@ jobs:
             echo "token<<EOF" >> $GITHUB_OUTPUT
             echo "$TOKEN_CONTENT" >> $GITHUB_OUTPUT
             echo "EOF" >> $GITHUB_OUTPUT
+            echo "Token prêt pour la mise à jour"
           else
             echo "Le nouveau token n'est pas un JSON valide. Il ne sera pas sauvegardé."
           fi
         fi
     
-    - name: Update token in GitHub secrets
+    - name: Update token in GitHub secrets (Method 1 - CLI)
       if: steps.run_sync.outputs.token != ''
-      uses: gliech/create-github-secret-action@v1
+      env:
+        GITHUB_TOKEN: ${{ secrets.GH_PA_TOKEN }}
+        NEW_TOKEN: ${{ steps.run_sync.outputs.token }}
+      run: |
+        echo "Tentative de mise à jour du token via GitHub CLI..."
+        
+        # Installer GitHub CLI si pas disponible
+        if ! command -v gh &> /dev/null; then
+          echo "Installation de GitHub CLI..."
+          curl -fsSL https://cli.github.com/packages/githubcli-archive-keyring.gpg | sudo dd of=/usr/share/keyrings/githubcli-archive-keyring.gpg
+          echo "deb [arch=$(dpkg --print-architecture) signed-by=/usr/share/keyrings/githubcli-archive-keyring.gpg] https://cli.github.com/packages stable main" | sudo tee /etc/apt/sources.list.d/github-cli.list > /dev/null
+          sudo apt update
+          sudo apt install gh -y
+        fi
+        
+        # Mettre à jour le secret via GitHub CLI
+        echo "$NEW_TOKEN" | gh secret set GMAIL_TOKEN --repo ${{ github.repository }} || {
+          echo "Échec de la mise à jour via GitHub CLI"
+          exit 1
+        }
+        
+        echo "Token mis à jour avec succès via GitHub CLI"
+    
+    - name: Update token in GitHub secrets (Method 2 - API directe)
+      if: failure() && steps.run_sync.outputs.token != ''
+      env:
+        GITHUB_TOKEN: ${{ secrets.GH_PA_TOKEN }}
+        NEW_TOKEN: ${{ steps.run_sync.outputs.token }}
+      run: |
+        echo "Tentative de mise à jour du token via API GitHub directe..."
+        
+        # Récupérer la clé publique du repository
+        PUBLIC_KEY_RESPONSE=$(curl -s -H "Authorization: token $GITHUB_TOKEN" \
+          -H "Accept: application/vnd.github.v3+json" \
+          "https://api.github.com/repos/${{ github.repository }}/actions/secrets/public-key")
+        
+        PUBLIC_KEY=$(echo "$PUBLIC_KEY_RESPONSE" | python -c "import sys, json; print(json.load(sys.stdin)['key'])")
+        KEY_ID=$(echo "$PUBLIC_KEY_RESPONSE" | python -c "import sys, json; print(json.load(sys.stdin)['key_id'])")
+        
+        # Chiffrer le secret avec la clé publique
+        ENCRYPTED_VALUE=$(python -c "
+        import base64
+        import json
+        from nacl import encoding, public
+        
+        def encrypt_secret(public_key: str, secret_value: str) -> str:
+            public_key_bytes = base64.b64decode(public_key)
+            public_key_obj = public.PublicKey(public_key_bytes)
+            sealed_box = public.SealedBox(public_key_obj)
+            encrypted = sealed_box.encrypt(secret_value.encode('utf-8'))
+            return base64.b64encode(encrypted).decode('utf-8')
+        
+        print(encrypt_secret('$PUBLIC_KEY', '''$NEW_TOKEN'''))
+        ")
+        
+        # Mettre à jour le secret
+        curl -X PUT \
+          -H "Authorization: token $GITHUB_TOKEN" \
+          -H "Accept: application/vnd.github.v3+json" \
+          -H "Content-Type: application/json" \
+          -d "{\"encrypted_value\":\"$ENCRYPTED_VALUE\",\"key_id\":\"$KEY_ID\"}" \
+          "https://api.github.com/repos/${{ github.repository }}/actions/secrets/GMAIL_TOKEN"
+        
+        echo "Token mis à jour avec succès via API directe"
+    
+    - name: Fallback - Update token via alternative action
+      if: failure() && steps.run_sync.outputs.token != ''
+      uses: hmanzur/actions-set-secret@v2.0.0
       with:
-        name: GMAIL_TOKEN
+        name: 'GMAIL_TOKEN'
         value: ${{ steps.run_sync.outputs.token }}
-        pa_token: ${{ secrets.GH_PA_TOKEN }}
+        repository: ${{ github.repository }}
+        token: ${{ secrets.GH_PA_TOKEN }}
